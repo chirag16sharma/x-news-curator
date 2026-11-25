@@ -1,0 +1,40 @@
+name: Daily Tech X Drafts
+
+on:
+  schedule:
+    # UTC times corresponding to 9:15 AM, 2:10 PM, and 7:20 PM IST
+    - cron: "45 3 * * *"
+    - cron: "40 8 * * *"
+    - cron: "50 13 * * *"
+  workflow_dispatch: # Allows you to trigger a test run manually anytime
+
+permissions:
+  contents: write
+
+jobs:
+  generate-draft:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run curator bot
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python bot.py
+
+      - name: Save posted article history
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add history.json
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Update posted news history" && git push)
