@@ -1,5 +1,7 @@
 import json
 import os
+import re
+import sys
 import feedparser
 import requests
 from google import genai
@@ -14,8 +16,19 @@ RSS_FEEDS = [
 ]
 
 HISTORY_FILE = "history.json"
-GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
-DISCORD_WEBHOOK_URL = os.environ["DISCORD_WEBHOOK_URL"]
+DISCORD_CONTENT_LIMIT = 2000
+
+
+def _require_env(name):
+    value = os.environ.get(name)
+    if not value:
+        print(f"Missing required env var: {name}")
+        sys.exit(1)
+    return value
+
+
+GEMINI_API_KEY = _require_env("GEMINI_API_KEY")
+DISCORD_WEBHOOK_URL = _require_env("DISCORD_WEBHOOK_URL")
 
 # 2. Customize your voice & rules here
 SYSTEM_PROMPT = """
@@ -49,16 +62,35 @@ def save_history(history):
         json.dump(history[-300:], f, indent=2)
 
 
+def _clean_summary(raw):
+    # RSS summaries often carry HTML tags/entities. Strip tags, trim.
+    text = re.sub(r"<[^>]+>", " ", raw or "")
+    text = re.sub(r"\s+", " ", text).strip()
+    return text[:600]
+
+
 def get_fresh_article(seen_urls):
     for feed_url in RSS_FEEDS:
-        feed = feedparser.parse(feed_url)
+        try:
+            feed = feedparser.parse(feed_url)
+        except Exception as e:
+            print(f"Feed fetch failed ({feed_url}): {e}")
+            continue
+
+        if feed.get("bozo") and not feed.entries:
+            print(f"Feed unreadable, skipping ({feed_url}): {feed.get('bozo_exception')}")
+            continue
+
         for entry in feed.entries[:10]:
             link = entry.get("link", "").strip()
             if link and link not in seen_urls:
                 title = entry.get("title", "").strip()
-                summary = entry.get("summary", "")[:600].strip()
+                summary = _clean_summary(entry.get("summary", ""))
                 return {"title": title, "summary": summary, "link": link}
     return None
+
+
+GEMINI_MODEL = "gemini-3.6-flash"
 
 
 def generate_take(article):
@@ -70,26 +102,38 @@ def generate_take(article):
     )
 
     response = client.models.generate_content(
-        model="gemini-3.6-flash",
+        model=GEMINI_MODEL,
         contents=user_prompt,
         config=types.GenerateContentConfig(
             system_instruction=SYSTEM_PROMPT,
             temperature=0.8,
         ),
     )
-    return response.text.strip().strip('"')
+    text = (response.text or "").strip().strip('"')
+    if not text:
+        raise RuntimeError("Gemini returned empty text")
+    return text
 
 
 def send_to_discord(article, post_text):
+    title = article["title"]
     # Putting the draft inside a code block makes it one-tap copyable on mobile
-    payload = {
-        "content": (
-            f"**Source:** [{article['title']}](<{article['link']}>)\n"
+    content = (
+        f"**Source:** [{title}](<{article['link']}>)\n"
+        f"**Ready to post ({len(post_text)} chars):**\n"
+        f"```\n{post_text}\n```"
+    )
+    if len(content) > DISCORD_CONTENT_LIMIT:
+        # Headline overflow shouldn't ever drop the actual post draft.
+        overflow = len(content) - DISCORD_CONTENT_LIMIT
+        title = title[: max(0, len(title) - overflow - 1)].rstrip() + "…"
+        content = (
+            f"**Source:** [{title}](<{article['link']}>)\n"
             f"**Ready to post ({len(post_text)} chars):**\n"
             f"```\n{post_text}\n```"
         )
-    }
-    res = requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=15)
+
+    res = requests.post(DISCORD_WEBHOOK_URL, json={"content": content}, timeout=15)
     res.raise_for_status()
 
 
@@ -101,8 +145,14 @@ def main():
         print("No new articles found.")
         return
 
-    post_text = generate_take(article)
-    send_to_discord(article, post_text)
+    try:
+        post_text = generate_take(article)
+        send_to_discord(article, post_text)
+    except Exception as e:
+        # Don't mark the article as seen if we never actually delivered it —
+        # otherwise a flaky Gemini/Discord call permanently skips that story.
+        print(f"Failed to process article ({article['link']}): {e}")
+        sys.exit(1)
 
     history.append(article["link"])
     save_history(history)
