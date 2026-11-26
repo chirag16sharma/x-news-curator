@@ -2,10 +2,12 @@ name: Daily Tech X Drafts
 
 on:
   schedule:
-    # UTC times corresponding to 9:15 AM, 2:10 PM, and 7:20 PM IST
+    # UTC times corresponding to 9:15 AM, 11:30 AM, 2:10 PM, 7:20 PM, 9:45 PM IST
     - cron: "45 3 * * *"
+    - cron: "0 6 * * *"
     - cron: "40 8 * * *"
     - cron: "50 13 * * *"
+    - cron: "15 16 * * *"
   workflow_dispatch: # Allows you to trigger a test run manually anytime
 
 permissions:
