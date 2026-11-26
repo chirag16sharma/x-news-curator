@@ -2,10 +2,12 @@ import json
 import os
 import re
 import sys
+import time
 import feedparser
 import requests
 from google import genai
 from google.genai import types
+from google.genai.errors import ServerError
 
 # 1. Configure your tech RSS feeds
 RSS_FEEDS = [
@@ -20,7 +22,9 @@ DISCORD_CONTENT_LIMIT = 2000
 
 
 def _require_env(name):
-    value = os.environ.get(name)
+    # .strip() guards against a stray trailing newline/space when a secret
+    # gets pasted into GitHub Actions — that's enough to make Discord 401.
+    value = (os.environ.get(name) or "").strip()
     if not value:
         print(f"Missing required env var: {name}")
         sys.exit(1)
@@ -91,6 +95,8 @@ def get_fresh_article(seen_urls):
 
 
 GEMINI_MODEL = "gemini-3.6-flash"
+GEMINI_MAX_RETRIES = 3
+GEMINI_RETRY_BACKOFF_SECONDS = 20  # doubled each retry
 
 
 def generate_take(article):
@@ -101,18 +107,30 @@ def generate_take(article):
         "Write one sharp, human-sounding X post with my take or advice on this:"
     )
 
-    response = client.models.generate_content(
-        model=GEMINI_MODEL,
-        contents=user_prompt,
-        config=types.GenerateContentConfig(
-            system_instruction=SYSTEM_PROMPT,
-            temperature=0.8,
-        ),
-    )
-    text = (response.text or "").strip().strip('"')
-    if not text:
-        raise RuntimeError("Gemini returned empty text")
-    return text
+    last_err = None
+    for attempt in range(1, GEMINI_MAX_RETRIES + 1):
+        try:
+            response = client.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=user_prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_PROMPT,
+                    temperature=0.8,
+                ),
+            )
+            text = (response.text or "").strip().strip('"')
+            if not text:
+                raise RuntimeError("Gemini returned empty text")
+            return text
+        except ServerError as e:
+            # 503/UNAVAILABLE = model overloaded, usually transient. Retry with backoff.
+            last_err = e
+            if attempt < GEMINI_MAX_RETRIES:
+                wait = GEMINI_RETRY_BACKOFF_SECONDS * (2 ** (attempt - 1))
+                print(f"Gemini server error (attempt {attempt}/{GEMINI_MAX_RETRIES}): {e}. Retrying in {wait}s.")
+                time.sleep(wait)
+
+    raise last_err
 
 
 def send_to_discord(article, post_text):
