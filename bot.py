@@ -18,6 +18,7 @@ RSS_FEEDS = [
 ]
 
 HISTORY_FILE = "history.json"
+LAST_POSTED_LINK_FILE = "last_posted_link.txt"
 DISCORD_CONTENT_LIMIT = 2000
 
 
@@ -223,6 +224,15 @@ def main():
 
     history.append(article["link"])
     save_history(history)
+
+    # Surface just the newly-posted link for the workflow's history-save step.
+    # With 5 runs/day, two runs can land close together and race on pushing
+    # history.json — the workflow uses this file to merge in this one URL
+    # against whatever the other run already pushed, instead of fighting
+    # over a full JSON diff.
+    with open(LAST_POSTED_LINK_FILE, "w", encoding="utf-8") as f:
+        f.write(article["link"])
+
     print(f"Sent draft for: {article['title']}")
 
 
