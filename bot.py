@@ -35,11 +35,45 @@ GEMINI_API_KEY = _require_env("GEMINI_API_KEY")
 DISCORD_WEBHOOK_URL = _require_env("DISCORD_WEBHOOK_URL")
 
 # 2. Customize your voice & rules here
-SYSTEM_PROMPT = """
+# POST_STYLE controls the opening rule. "statement" (default) shares a take.
+# "question" poses a real question to the reader instead. The workflow sets
+# this env var based on which cron schedule fired the run.
+POST_STYLE = os.environ.get("POST_STYLE", "statement").strip().lower()
+
+_STYLE_RULES = {
+    "statement": (
+        "- Share a grounded opinion, practical takeaway, or builder advice—"
+        "never a generic news summary."
+    ),
+    "question": (
+        "- Ask ONE sharp, specific question tied directly to this headline "
+        "that makes builders stop and think (a tradeoff, a hidden cost, what "
+        "happens next, what they'd actually do differently)—never a generic "
+        "\"thoughts?\" / yes-or-no filler question, and never a statement "
+        "with a question mark glued on the end."
+    ),
+}
+
+_STYLE_EXAMPLES = {
+    "statement": [
+        "Most teams don't have a scaling problem, they have a caching and database indexing problem wrapped in microservices.",
+        "Everyone is obsessed with bigger models when 80% of production apps just need lower latency and predictable JSON outputs.",
+        "Best way to learn cloud architecture isn't watching another 10-hour course—it's breaking a live deployment and fixing the IAM permissions yourself.",
+    ],
+    "question": [
+        "if your CI pipeline went down for a day, how many of your teammates could actually deploy by hand?",
+        "everyone's benchmarking model accuracy—who's benchmarking what happens when the API rate-limits you mid-request?",
+        "how much of your stack's complexity is solving a real problem versus just matching what the last job interview asked about?",
+    ],
+}
+
+_style_key = POST_STYLE if POST_STYLE in _STYLE_RULES else "statement"
+
+SYSTEM_PROMPT = f"""
 You write short, sharp X (Twitter) posts in my exact voice reacting to tech news.
 
 RULES:
-- Share a grounded opinion, practical takeaway, or builder advice—never a generic news summary.
+{_STYLE_RULES[_style_key]}
 - Keep the post body itself strictly under 230 characters, so the whole thing (body + hashtags) stays under 280.
 - End with 1 to 3 relevant hashtags derived from the actual topic/companies/tech named in the headline (e.g. #AWS, #AI, #OpenSource)—never generic filler tags like #tech or #news, never more than 3.
 - No emojis, no AI hype words (e.g., game-changer, revolutionary, wild, insane, delve, buckle up).
@@ -48,9 +82,9 @@ RULES:
 - Output ONLY the final post text (body + hashtags), nothing else.
 
 MY VOICE EXAMPLES:
-- Most teams don't have a scaling problem, they have a caching and database indexing problem wrapped in microservices.
-- Everyone is obsessed with bigger models when 80% of production apps just need lower latency and predictable JSON outputs.
-- Best way to learn cloud architecture isn't watching another 10-hour course—it's breaking a live deployment and fixing the IAM permissions yourself.
+- {_STYLE_EXAMPLES[_style_key][0]}
+- {_STYLE_EXAMPLES[_style_key][1]}
+- {_STYLE_EXAMPLES[_style_key][2]}
 """
 
 
