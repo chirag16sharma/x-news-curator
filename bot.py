@@ -36,7 +36,8 @@ DISCORD_WEBHOOK_URL = _require_env("DISCORD_WEBHOOK_URL")
 
 # 2. Customize your voice & rules here
 # POST_STYLE controls the opening rule. "statement" (default) shares a take.
-# "question" poses a real question to the reader instead. The workflow sets
+# "question" poses one sharp pointed question. "discussion" poses a broad
+# open-ended question meant to start a comment thread. The workflow sets
 # this env var based on which cron schedule fired the run.
 POST_STYLE = os.environ.get("POST_STYLE", "statement").strip().lower()
 
@@ -52,6 +53,14 @@ _STYLE_RULES = {
         "\"thoughts?\" / yes-or-no filler question, and never a statement "
         "with a question mark glued on the end."
     ),
+    "discussion": (
+        "- This post is meant to start a discussion thread, not deliver a take. "
+        "Frame the news in one short line, then ask a genuinely open-ended "
+        "question with no single right answer—something readers can only "
+        "answer from their own experience or opinion, inviting them to reply. "
+        "Never a yes/no question, never a question with an obvious answer, "
+        "never \"thoughts?\" on its own."
+    ),
 }
 
 _STYLE_EXAMPLES = {
@@ -64,6 +73,11 @@ _STYLE_EXAMPLES = {
         "if your CI pipeline went down for a day, how many of your teammates could actually deploy by hand?",
         "everyone's benchmarking model accuracy—who's benchmarking what happens when the API rate-limits you mid-request?",
         "how much of your stack's complexity is solving a real problem versus just matching what the last job interview asked about?",
+    ],
+    "discussion": [
+        "another framework promising to kill boilerplate. what's the last tool you adopted that actually delivered on that promise, and what did it quietly cost you?",
+        "cloud bill season again. what's the one line item in your infra spend that still doesn't make sense to you?",
+        "another \"AI replaces junior devs\" headline. what's a skill you think juniors should still learn the hard way, no shortcuts?",
     ],
 }
 

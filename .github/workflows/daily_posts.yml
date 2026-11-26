@@ -29,11 +29,14 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Pick post style for this run
-        # 11:30 AM and 2:10 PM IST runs ask a question instead of a statement.
-        # github.event.schedule holds the exact cron string that fired this run
-        # (empty for a manual workflow_dispatch run, which defaults to statement).
+        # 9:15 AM IST opens a discussion thread (open-ended question).
+        # 11:30 AM and 2:10 PM IST ask one sharp pointed question.
+        # Everything else (incl. manual workflow_dispatch) is a statement.
+        # github.event.schedule holds the exact cron string that fired this run.
         run: |
-          if [ "${{ github.event.schedule }}" = "0 6 * * *" ] || [ "${{ github.event.schedule }}" = "40 8 * * *" ]; then
+          if [ "${{ github.event.schedule }}" = "45 3 * * *" ]; then
+            echo "POST_STYLE=discussion" >> "$GITHUB_ENV"
+          elif [ "${{ github.event.schedule }}" = "0 6 * * *" ] || [ "${{ github.event.schedule }}" = "40 8 * * *" ]; then
             echo "POST_STYLE=question" >> "$GITHUB_ENV"
           else
             echo "POST_STYLE=statement" >> "$GITHUB_ENV"
