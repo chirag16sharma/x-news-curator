@@ -68,11 +68,11 @@ _STYLE_EXAMPLES = {
     "statement": [
         "Most teams don't have a scaling problem, they have a caching and database indexing problem wrapped in microservices.",
         "Everyone is obsessed with bigger models when 80% of production apps just need lower latency and predictable JSON outputs.",
-        "Best way to learn cloud architecture isn't watching another 10-hour course—it's breaking a live deployment and fixing the IAM permissions yourself.",
+        "Best way to learn cloud architecture isn't watching another 10-hour course, it's breaking a live deployment and fixing the IAM permissions yourself.",
     ],
     "question": [
         "if your CI pipeline went down for a day, how many of your teammates could actually deploy by hand?",
-        "everyone's benchmarking model accuracy—who's benchmarking what happens when the API rate-limits you mid-request?",
+        "everyone's benchmarking model accuracy, but who's benchmarking what happens when the API rate-limits you mid-request?",
         "how much of your stack's complexity is solving a real problem versus just matching what the last job interview asked about?",
     ],
     "discussion": [
@@ -83,6 +83,16 @@ _STYLE_EXAMPLES = {
 }
 
 _style_key = POST_STYLE if POST_STYLE in _STYLE_RULES else "statement"
+
+_NO_AI_TELLS_RULES = """\
+- Never use an em dash or en dash (— or –). Use a period, comma, or just "and"/"but" instead.
+- Never use a "not X, it's Y" / "not just X but Y" contrast construction.
+- No bolded words, no title-case phrases, no emoji, no hashtag-as-punctuation.
+- Never open with a staging phrase like "here's the thing", "let's be honest", "honestly?", "real talk".
+- No forced rule-of-three lists (three examples, three adjectives in a row) if two would say it just as well.
+- No inflated-importance words: game-changer, revolutionary, groundbreaking, crucial, pivotal, robust, landscape, delve, underscores, testament, bolstered, meticulous, vibrant, tapestry.
+- No closer sentence that just restates the point you already made ("that's the real win", "that's what matters").
+- Write it the way you'd actually type it fast to a friend, not like a LinkedIn post."""
 
 SYSTEM_PROMPT = f"""
 You write short, sharp X (Twitter) posts in my exact voice reacting to tech news.
@@ -95,6 +105,8 @@ RULES:
 - Never start with "Just saw", "Interesting", "Big news", or "Here's why".
 - Write in lowercase or normal conversational casing, matching the examples below.
 - Output ONLY the final post text (body + hashtags), nothing else.
+
+{_NO_AI_TELLS_RULES}
 
 MY VOICE EXAMPLES:
 - {_STYLE_EXAMPLES[_style_key][0]}
@@ -149,6 +161,15 @@ GEMINI_MAX_RETRIES = 3
 GEMINI_RETRY_BACKOFF_SECONDS = 20  # doubled each retry
 
 
+def _strip_ai_tells(text):
+    # Backstop in case the model ignores the prompt's no-dash/no-bold rules.
+    text = text.replace("—", ", ").replace("–", ", ")
+    text = text.replace("**", "")
+    text = re.sub(r",\s*,", ",", text)  # collapse a ", ," left by a replaced dash
+    text = re.sub(r"[ \t]+", " ", text).strip()
+    return text
+
+
 def generate_take(article):
     client = genai.Client(api_key=GEMINI_API_KEY)
     user_prompt = (
@@ -171,7 +192,7 @@ def generate_take(article):
             text = (response.text or "").strip().strip('"')
             if not text:
                 raise RuntimeError("Gemini returned empty text")
-            return text
+            return _strip_ai_tells(text)
         except ServerError as e:
             # 503/UNAVAILABLE = model overloaded, usually transient. Retry with backoff.
             last_err = e
